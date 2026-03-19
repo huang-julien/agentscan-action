@@ -1,2 +1,2 @@
 # AgentScan Action
-Analyzes GitHub PR activity patterns to detect automation signals and classify contribution automation levels
+GitHub action that analyzes PR authors' recent activity patterns to detect automation signals and classify their contribution automation levels
