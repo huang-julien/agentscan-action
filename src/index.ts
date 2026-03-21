@@ -18,6 +18,12 @@ type AutomationListItem = {
 async function run() {
   try {
     const token = core.getInput("github-token", { required: true });
+    const skipMembersInput = core.getInput("skip-members");
+    const skipMembers = skipMembersInput
+      .split(",")
+      .map((m) => m.trim())
+      .filter(Boolean);
+
     const octokit = github.getOctokit(token);
 
     const context = github.context;
@@ -26,6 +32,11 @@ async function run() {
 
     if (!prNumber) {
       throw new Error("No PR number found");
+    }
+
+    if (skipMembers.includes(username)) {
+      core.info(`Skipping analysis for ${username}`);
+      return;
     }
 
     const { data: user } = await octokit.rest.users.getByUsername({

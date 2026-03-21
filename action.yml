@@ -5,6 +5,10 @@ inputs:
   github-token:
     description: "GitHub token"
     required: true
+  skip-members:
+    description: "Comma-separated list of usernames to skip from scanning"
+    required: false
+    default: ""
 outputs:
   flagged:
     description: "Whether the account was flagged"
