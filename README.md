@@ -10,7 +10,7 @@ Create a workflow file in your repository (e.g., `.github/workflows/agentscan.ym
 name: AgentScan
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened]
 
 permissions:
