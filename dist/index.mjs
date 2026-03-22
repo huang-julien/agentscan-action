@@ -4,6 +4,7 @@ import os, { EOL } from "os";
 import * as crypto from "crypto";
 import * as fs from "fs";
 import { constants, existsSync, promises, readFileSync } from "fs";
+import * as path from "path";
 //#region \0rolldown/runtime.js
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -19807,11 +19808,14 @@ function h(e) {
 }
 //#endregion
 //#region src/index.ts
+const CACHE_TTL_DAYS = 2;
 async function run() {
 	try {
 		const token = getInput("github-token", { required: true });
-		const skipMembers = getInput("skip-members").split(",").map((m) => m.trim()).filter(Boolean);
-		const octokit = getOctokit(token);
+		const skipMembersInput = getInput("skip-members");
+		const skipCommentOnOrganic = getInput("skip-comment-on-organic").toLowerCase() === "true";
+		const cacheDir = getInput("cache-path");
+		const skipMembers = skipMembersInput.split(",").map((m) => m.trim()).filter(Boolean);
 		const context$2 = context;
 		const username = context$2.actor;
 		const prNumber = context$2.payload.pull_request?.number;
@@ -19820,40 +19824,82 @@ async function run() {
 			info(`Skipping analysis for ${username}`);
 			return;
 		}
-		const { data: user } = await octokit.rest.users.getByUsername({ username });
-		const { data: events } = await octokit.rest.activity.listPublicEventsForUser({
-			username,
-			per_page: 100,
-			page: 1
-		});
-		let verified = [];
-		try {
-			const { data: verifiedList } = await octokit.rest.repos.getContent({
-				owner: "matteogabriele",
-				repo: "agentscan",
-				path: "data/verified-automations-list.json"
-			});
-			if ("content" in verifiedList) {
-				const content = Buffer.from(verifiedList.content, "base64").toString("utf-8");
-				verified = JSON.parse(content);
+		const octokit = getOctokit(token);
+		let cachedAnalysis = null;
+		if (cacheDir !== "") {
+			const cacheFile = path.join(cacheDir, `${username}.json`);
+			if (fs.existsSync(cacheFile)) try {
+				const cached = JSON.parse(fs.readFileSync(cacheFile, "utf-8"));
+				const cacheAgeDays = (Date.now() - cached.timestamp) / (1e3 * 60 * 60 * 24);
+				if (cacheAgeDays < CACHE_TTL_DAYS) {
+					cachedAnalysis = cached;
+					info(`Using cached analysis for ${username} (${cacheAgeDays.toFixed(1)} days old)`);
+				} else info(`Cache expired for ${username} (${cacheAgeDays.toFixed(1)} days old, TTL: ${CACHE_TTL_DAYS} days)`);
+			} catch (cacheError) {
+				warning(`Failed to read cache: ${String(cacheError)}`);
 			}
-		} catch (error) {
-			warning("Could not fetch verified automations list");
 		}
-		const hasCommunityFlag = !!verified.find((account) => account.username === username);
-		const analysis = m({
-			accountName: username,
-			reposCount: user.public_repos,
-			createdAt: user.created_at,
-			events
-		});
-		setOutput("flagged", hasCommunityFlag || analysis.classification !== "organic" ? "true" : "false");
+		let hasCommunityFlag = false;
+		let analysis = null;
+		let isFlagged = false;
+		if (cachedAnalysis) {
+			analysis = cachedAnalysis.analysis;
+			hasCommunityFlag = cachedAnalysis.hasCommunityFlag || false;
+			isFlagged = cachedAnalysis.isFlagged || false;
+		} else {
+			const { data: user } = await octokit.rest.users.getByUsername({ username });
+			const { data: events } = await octokit.rest.activity.listPublicEventsForUser({
+				username,
+				per_page: 100,
+				page: 1
+			});
+			let verified = [];
+			try {
+				const { data: verifiedList } = await octokit.rest.repos.getContent({
+					owner: "matteogabriele",
+					repo: "agentscan",
+					path: "data/verified-automations-list.json"
+				});
+				if ("content" in verifiedList) {
+					const content = Buffer.from(verifiedList.content, "base64").toString("utf-8");
+					verified = JSON.parse(content);
+				}
+			} catch (error) {
+				warning("Could not fetch verified automations list");
+			}
+			hasCommunityFlag = !!verified.find((account) => account.username === username);
+			analysis = m({
+				accountName: username,
+				reposCount: user.public_repos,
+				createdAt: user.created_at,
+				events
+			});
+			isFlagged = hasCommunityFlag || analysis.classification !== "organic";
+			if (cacheDir) try {
+				if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+				const cacheFile = path.join(cacheDir, `${username}.json`);
+				fs.writeFileSync(cacheFile, JSON.stringify({
+					analysis,
+					hasCommunityFlag,
+					isFlagged,
+					timestamp: Date.now()
+				}, null, 2));
+				info(`Cached analysis for ${username}`);
+			} catch (cacheError) {
+				warning(`Failed to save cache: ${String(cacheError)}`);
+			}
+		}
+		setOutput("flagged", isFlagged ? "true" : "false");
 		setOutput("classification", analysis.classification);
 		setOutput("score", analysis.score);
 		setOutput("community-flagged", hasCommunityFlag ? "true" : "false");
 		setOutput("flags", JSON.stringify(analysis.flags));
 		setOutput("account-age", analysis.profile.age);
 		setOutput("username", username);
+		if (skipCommentOnOrganic && !hasCommunityFlag && analysis.classification === "organic") {
+			info("Skipping comment on PR as analysis returned 'organic' and skip-comment-on-organic is enabled");
+			return;
+		}
 		const indicator = hasCommunityFlag ? "🚩" : {
 			organic: "✅",
 			mixed: "⚠️",
@@ -19900,6 +19946,6 @@ ${details.description}
 		if (error instanceof Error) setFailed(error.message);
 	}
 }
-run();
+if (process.env.NODE_ENV !== "test") run();
 //#endregion
-export {};
+export { run };
