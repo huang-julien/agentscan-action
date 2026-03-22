@@ -13,6 +13,10 @@ inputs:
     description: "Enable caching of analysis results"
     required: false
     default: "false"
+  skip-comment-on-organic:
+    description: "Skip posting comment on PR if analysis result is 'organic'"
+    required: false
+    default: "false"
 outputs:
   flagged:
     description: "Whether the account was flagged"

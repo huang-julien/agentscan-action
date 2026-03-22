@@ -31,6 +31,8 @@ async function run() {
     const token = core.getInput("github-token", { required: true });
     const skipMembersInput = core.getInput("skip-members");
     const cacheEnabled = core.getInput("cache").toLowerCase() === "true";
+    const skipCommentOnOrganic =
+      core.getInput("skip-comment-on-organic").toLowerCase() === "true";
     const cacheDir = cacheEnabled ? ".agentscan-cache" : "";
     const skipMembers = skipMembersInput
       .split(",")
@@ -170,6 +172,18 @@ async function run() {
     core.setOutput("flags", JSON.stringify(analysis.flags));
     core.setOutput("account-age", analysis.profile.age);
     core.setOutput("username", username);
+
+    // Skip commenting if analysis is organic and skip-comment-on-organic is enabled
+    if (
+      skipCommentOnOrganic &&
+      !hasCommunityFlag &&
+      analysis.classification === "organic"
+    ) {
+      core.info(
+        "Skipping comment on PR as analysis returned 'organic' and skip-comment-on-organic is enabled",
+      );
+      return;
+    }
 
     const statusIndicators: Record<IdentityClassification, string> = {
       organic: "✅",
