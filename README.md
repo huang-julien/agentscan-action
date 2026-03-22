@@ -36,7 +36,8 @@ The action will run automatically on new and reopened pull requests, analyzing t
 
 - **github-token** (required): GitHub token for API access
 - **skip-members** (optional): Comma-separated list of usernames to skip from scanning
-- **cache** (optional): Enable caching of analysis results to speed up repeated scans (default: false)
+- **cache-path** (optional): Path to cache directory for storing analysis results (e.g., `.agentscan-cache`). When provided, analysis results are cached and reused within the TTL period
+- **skip-comment-on-organic** (optional): Skip posting PR comment if analysis result is "organic" (default: false)
 
 ### Skip Members
 
@@ -54,35 +55,47 @@ Members in the skip list will be excluded from analysis without any PR comment o
 
 ### Caching
 
-To enable caching and avoid redundant API calls, set the `cache` input to `true`:
+To enable caching and avoid redundant API calls, use `actions/cache@v4` and pass the cache path to the action:
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - name: Cache AgentScan analysis
+    uses: actions/cache@v4
+    with:
+      path: .agentscan-cache
+      key: agentscan-cache-${{ github.actor }}
+      restore-keys: agentscan-cache-
+  - name: AgentScan
+    uses: MatteoGabriele/agentscan-action@v1.0.1
+    with:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+      cache-path: ".agentscan-cache"
+```
+
+**How caching works:**
+
+1. Set up `actions/cache@v4` with a `path` and unique `key`
+2. Pass the same path to the action via `cache-path` input
+3. The action stores analysis results in that directory
+4. `actions/cache` persists the directory between workflow runs
+5. On subsequent runs, cached results are reused if they're within the TTL period
+
+**Cache Invalidation**: Cached entries automatically expire after 2 days. When a cache entry is older than the TTL (Time-To-Live), it will be invalidated and the account will be re-analyzed with fresh data from GitHub's API.
+
+### Skip Organic Comments
+
+To skip posting a PR comment when the analysis result is "organic" (clean, human-like activity), enable the `skip-comment-on-organic` option:
 
 ```yaml
 - name: AgentScan
   uses: MatteoGabriele/agentscan-action@v1.0.1
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
-    cache: true
+    skip-comment-on-organic: true
 ```
 
-Cache files are stored in `.agentscan-cache` directory. To preserve cache across workflow runs, use the `actions/cache` action:
-
-```yaml
-steps:
-  - uses: actions/checkout@v4
-  - name: Restore analysis cache
-    uses: actions/cache@v4
-    with:
-      path: .agentscan-cache
-      key: agentscan-${{ github.actor }}
-      restore-keys: agentscan-
-  - name: AgentScan
-    uses: MatteoGabriele/agentscan-action@v1.0.1
-    with:
-      github-token: ${{ secrets.GITHUB_TOKEN }}
-      cache: true
-```
-
-**Cache Invalidation**: Cached entries automatically expire after 7 days. When a cache entry is older than the TTL (Time-To-Live), it will be invalidated and the account will be re-analyzed with fresh data from GitHub's API.
+When enabled, the action will still output all analysis data (for downstream steps to use) but won't post a comment on the PR if the account is classified as organic.
 
 ## Testing
 
