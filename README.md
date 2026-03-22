@@ -36,6 +36,7 @@ The action will run automatically on new and reopened pull requests, analyzing t
 
 - **github-token** (required): GitHub token for API access
 - **skip-members** (optional): Comma-separated list of usernames to skip from scanning
+- **agent-scan-comment** (optional): Enable/disable posting comments on PRs (default: true). Set to false if you only want to use the outputs
 - **cache-path** (optional): Path to cache directory for storing analysis results (e.g., `.agentscan-cache`). When provided, analysis results are cached and reused within the TTL period
 - **skip-comment-on-organic** (optional): Skip posting PR comment if analysis result is "organic" (default: false)
 
@@ -96,6 +97,20 @@ To skip posting a PR comment when the analysis result is "organic" (clean, human
 ```
 
 When enabled, the action will still output all analysis data (for downstream steps to use) but won't post a comment on the PR if the account is classified as organic.
+
+### Disable Comments
+
+To disable all PR comments and only use the action's outputs, set `agent-scan-comment` to `false`:
+
+```yaml
+- name: AgentScan
+  uses: MatteoGabriele/agentscan-action@v1.0.1
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    agent-scan-comment: false
+```
+
+This is useful if you want to use the analysis outputs in downstream steps without posting comments.
 
 ## Testing
 
