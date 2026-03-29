@@ -236,7 +236,7 @@ async function run() {
 
     try {
       if (core.getInput("agent-scan-comment") === "true") {
-        const aiSection = aiAssessment && aiAssessment.classification !== 'organic' ? `\n\n#### 🤖 AI Assessment\n**${aiAssessment.classification}** (${aiAssessment.confidence}% confidence) — ${aiAssessment.reasoning}`
+        const aiSection = aiAssessment  ? `\n\n#### 🤖 AI Assessment\n**${aiAssessment.classification}** (${aiAssessment.confidence}% confidence) — ${aiAssessment.reasoning}`
           : "";
 
         await octokit.rest.issues.createComment({

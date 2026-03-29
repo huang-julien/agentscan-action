@@ -17,7 +17,7 @@ export type AIAnalysisResult = {
   reasoning: string;
 };
 
-const SYSTEM_PROMPT = [
+export const SYSTEM_PROMPT = [
   "You are an expert AI system designed to analyze GitHub user accounts and classify them as human-operated (\"organic\"), bot/automated (\"automation\"), or mixed behavior patterns.",
   "",
   "## Your Task",
@@ -28,6 +28,7 @@ const SYSTEM_PROMPT = [
   "- user.created_at: ISO 8601 date string (account creation time)",
   "- user.public_repos: number of public repositories owned",
   "- events: array of GitHub events with type, created_at, repo.name, payload",
+  "  NOTE: Events are limited to the most recent 100 public events from the GitHub API. This is NOT the user's complete activity history — draw conclusions accordingly and avoid absolute statements about total activity.",
   "",
   "## Classification Categories",
   '- **organic**: Human-operated account (low bot-like signals, score >= 70)',
@@ -128,6 +129,42 @@ const SYSTEM_PROMPT = [
   "- Be precise. Focus on evidence-based assessment, not fixed rubrics.",
 ].join("\n");
 
+function slimEvents(events: Record<string, unknown>[]) {
+  return events.map((e) => {
+    const payload = (e.payload ?? {}) as Record<string, unknown>;
+    return {
+      type: e.type,
+      created_at: e.created_at,
+      repo: (e.repo as { name?: string })?.name,
+      action: payload.action,
+      ref: payload.ref,
+      ref_type: payload.ref_type,
+      size: payload.size,
+      commits: Array.isArray(payload.commits) ? payload.commits.length : undefined,
+    };
+  });
+}
+
+export function buildUserPrompt(input: AIAnalysisInput): string {
+  const compactedData = compactor(
+    JSON.stringify({
+      user: {
+        login: input.username,
+        created_at: input.accountCreatedAt,
+        public_repos: input.publicRepos,
+      },
+      heuristic: {
+        score: input.analysis.score,
+        classification: input.analysis.classification,
+        flags: input.analysis.flags,
+      },
+      events: slimEvents(input.events),
+    }),
+  );
+
+  return `Here is the data to analyze: ${compactedData}`;
+}
+
 export async function getAIAnalysis({
   token,
   model,
@@ -137,23 +174,7 @@ export async function getAIAnalysis({
   publicRepos,
   events,
 }: AIAnalysisInput): Promise<AIAnalysisResult | null> {
-  const compactedData = compactor(
-    JSON.stringify({
-      user: {
-        login: username,
-        created_at: accountCreatedAt,
-        public_repos: publicRepos,
-      },
-      heuristic: {
-        score: analysis.score,
-        classification: analysis.classification,
-        flags: analysis.flags,
-      },
-      events,
-    }),
-  );
-
-  const prompt = `Here is the data to analyze: ${compactedData}`;
+  const prompt = buildUserPrompt({ token, model, username, analysis, accountCreatedAt, publicRepos, events });
 
   const response = await fetch(
     "https://models.github.ai/inference/chat/completions",
@@ -175,7 +196,8 @@ export async function getAIAnalysis({
   );
 
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    const body = await response.text();
+    throw new Error(`${response.status} ${response.statusText}: ${body}`);
   }
 
   const data = (await response.json()) as {
@@ -184,6 +206,6 @@ export async function getAIAnalysis({
   const content = data.choices?.[0]?.message?.content?.trim() ?? null;
   if (!content) return null;
 
-  // todo : add validation of content structure before parsing like zod or valibott
+  // todo : add validation of content structure before parsing like zod of
   return JSON.parse(content) as AIAnalysisResult;
 }
