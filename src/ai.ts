@@ -64,7 +64,7 @@ export const SYSTEM_PROMPT = [
   "",
   "#### D. 24/7 Activity Pattern",
   "Analyze each calendar day: activity spanning 21+ unique hours with minimal rest suggests no sleep.",
-  "Pattern: Sustained multi-day coding without realistic sleep windows.",
+  "Pattern: Sustained multi-day coding without realistic sleep windows. Over 2 days indicates strong bot signals, especially if combined with other patterns.",
   "",
   "#### E. Event Type Diversity (Shannon's Entropy)",
   "Calculate normalized Shannon entropy of event types:",
@@ -203,8 +203,13 @@ export async function getAIAnalysis({
   const data = (await response.json()) as {
     choices?: { message?: { content?: string } }[];
   };
-  const content = data.choices?.[0]?.message?.content?.trim() ?? null;
+  let content = data.choices?.[0]?.message?.content?.trim() ?? null;
   if (!content) return null;
+
+  content = content
+  // remove DeepSeek-R1 markers if present
+  // This is stupid.
+  .replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 
   // todo : add validation of content structure before parsing like zod of
   return JSON.parse(content) as AIAnalysisResult;
