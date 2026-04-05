@@ -35,7 +35,7 @@ describe("AgentScan Action", () => {
       "skip-members": "",
       "agent-scan-comment": "true",
       "cache-path": "",
-      "skip-comment-on-organic": "false",
+      report: "true",
     };
     const config = { ...defaults, ...overrides };
 
@@ -362,7 +362,7 @@ describe("AgentScan Action", () => {
         owner: "test-owner",
         repo: "test-repo",
         issue_number: 123,
-        labels: ["agentscan:automated-account"],
+        labels: ["agentscan:automation-signals"],
       });
     });
 
@@ -404,6 +404,97 @@ describe("AgentScan Action", () => {
         issue_number: 123,
         labels: ["agentscan:community-flagged"],
       });
+    });
+  });
+
+  describe("Report Configuration", () => {
+    beforeEach(() => {
+      setupContext();
+      setupCommonMocks();
+    });
+
+    it("should skip all comments when report is false", async () => {
+      setupInputs({ report: "false" });
+      vi.mocked(github.getOctokit).mockReturnValue(createMockOctokit() as any);
+
+      await run();
+
+      const mockOctokit = vi.mocked(github.getOctokit).mock.results[0].value;
+      expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
+    });
+
+    it("should comment on all classifications when report is true", async () => {
+      setupInputs({ report: "true" });
+      vi.mocked(github.getOctokit).mockReturnValue(createMockOctokit() as any);
+
+      vi.mocked(identifyReplicant).mockReturnValue({
+        ...mockAnalysis,
+        classification: "automation",
+      });
+
+      await run();
+
+      const mockOctokit = vi.mocked(github.getOctokit).mock.results[0].value;
+      expect(mockOctokit.rest.issues.createComment).toHaveBeenCalled();
+    });
+
+    it("should comment only for specified classifications", async () => {
+      setupInputs({ report: '["automation"]' });
+      vi.mocked(github.getOctokit).mockReturnValue(createMockOctokit() as any);
+
+      vi.mocked(identifyReplicant).mockReturnValue({
+        ...mockAnalysis,
+        classification: "automation",
+      });
+
+      await run();
+
+      const mockOctokit = vi.mocked(github.getOctokit).mock.results[0].value;
+      expect(mockOctokit.rest.issues.createComment).toHaveBeenCalled();
+    });
+
+    it("should skip comment when classification is not in report list", async () => {
+      setupInputs({ report: '["automation"]' });
+      vi.mocked(github.getOctokit).mockReturnValue(createMockOctokit() as any);
+
+      vi.mocked(identifyReplicant).mockReturnValue({
+        ...mockAnalysis,
+        classification: "mixed",
+      });
+
+      await run();
+
+      const mockOctokit = vi.mocked(github.getOctokit).mock.results[0].value;
+      expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
+    });
+
+    it("should comment on community-flagged accounts when specified", async () => {
+      setupInputs({ report: '["community-flag"]' });
+      vi.mocked(github.getOctokit).mockReturnValue(
+        createMockOctokit({
+          repos: {
+            getContent: vi.fn().mockResolvedValue({
+              data: {
+                content: Buffer.from(
+                  JSON.stringify([
+                    {
+                      username: "test-user",
+                      reason: "Verified automation",
+                      createdAt: "2024-01-01",
+                      issueUrl: "https://example.com",
+                    },
+                  ]),
+                ),
+              },
+            }),
+          },
+        }) as any,
+      );
+
+      await run();
+
+      const mockOctokit = vi.mocked(github.getOctokit).mock.results[0].value;
+      expect(mockOctokit.rest.issues.createComment).toHaveBeenCalled();
     });
   });
 });
